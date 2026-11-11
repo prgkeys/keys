@@ -545,11 +545,15 @@ function onScan(ev){
   if (serial && serial === session.lastSerial && now - session.lastAt < 6000) return;   // тот же чип всё ещё у телефона
   session.lastSerial = serial; session.lastAt = now;
   const id = tagKey(ev);
-  if (!id) { scanSheet('Чип пустой — зарегистрируйте его в разделе «Ещё»'); return; }
   if (navigator.vibrate) navigator.vibrate(60);
+  const k = id && findKey(id);
+  if (!k) {                                   // чип пустой или связки нет в учёте — предложить регистрацию
+    nfcStop(true);
+    const sk = id ? splitKey(id) : { apt:'', set:'' };
+    V.reg = { apt:sk.apt, set:+sk.set || nextSet(sk.apt), extra:0, single:true };
+    regSheet(); return;
+  }
   const add = (text, key) => { session.lines.unshift({ text, key }); if (nfc === session) scanSheet(); };
-  const k = findKey(id);
-  if (!k) return add(id + ' — не зарегистрирована', id);
   if (justDone(id)) return add(id + ' — уже записано');
   const t = autoType(k);
   if (!t) return add(`${id} — ${stFull(k)}`, id);
@@ -557,6 +561,18 @@ function onScan(ev){
   add(`✓ ${id} — ${SHORT[t]}`);
 }
 
+const nextSet = apt => { const a = normApt(apt); return a ? keysOf(a).reduce((m, k) => Math.max(m, k.set), 0) + 1 : 1; };
+function regSheet(){
+  const apt = normApt(V.reg.apt), have = apt ? keysOf(apt).map(k => k.set) : [];
+  let sets = '';
+  for (let i = 1; i <= Math.max(DEFAULT_SETS, V.reg.set, ...have); i++)
+    sets += `<button class="${V.reg.set===i?'on':''} ${have.includes(i)?'have':''}" data-a="regSet2" data-s="${i}">${i}</button>`;
+  sheet(`<h3>Новая связка</h3><p class="mute small">Этот чип не зарегистрирован. Укажите квартиру и номер связки.</p>
+    <input class="field" style="width:100%" id="regApt2" list="aptList2" placeholder="например ID39" value="${esc(V.reg.apt)}" autocomplete="off" autocapitalize="characters">
+    <datalist id="aptList2">${apartments().map(a => `<option value="${esc(a)}">${esc(addrOf(a))}</option>`).join('')}</datalist>
+    <div class="sets" style="justify-content:center">${sets}</div>
+    <button class="btn pri" data-a="regGo">Записать на чип</button><button class="btn" data-a="askNo">Отмена</button>`);
+}
 function regPrompt(note){
   const apt = normApt(V.reg.apt);
   nfcSheet(`${apt} · связка ${V.reg.set}`, note || 'Поднесите чип этой связки к телефону и подержите секунду');
@@ -587,6 +603,11 @@ async function onWriteTap(ev){
   try { await api({ action:'register', apt, set, who:me, serial }); }
   catch(e){ session.working = false; if (nfc === session) regPrompt('Чип записан, но таблица не ответила. Поднесите другой чип или повторите позже.'); session.lastSerial = null; return; }
   session.working = false;
+  if (V.reg.single) {                          // регистрация одного чипа из режима сканирования
+    V.reg = { apt:'', set:1, extra:0 };
+    if (nfc === session) nfcStop();
+    toast(`✓ ${id} зарегистрирована`); render(); return;
+  }
   // следующая связка
   if (set < DEFAULT_SETS) {
     V.reg.set = set + 1;
@@ -668,6 +689,11 @@ const A = {
     try { const j = await api({ action:'register', apt:normApt(V.reg.apt), set:V.reg.set, who:me }); toast('✓ ' + j.key + ' в учёте'); render(); } catch(e){}
   },
   scan(){ nfcStart('scan'); },
+  regSet2(d){ V.reg.set = +d.s; regSheet(); },
+  regGo(){
+    if (!normApt(V.reg.apt)) { toast('Введите номер квартиры, например ID39'); return $('regApt2').focus(); }
+    nfcStart('write');
+  },
   nfcStop(){ nfcStop(); render(); },
   nfcOverwrite(){ if (nfc) { nfc.confirmed = nfc.pending; regPrompt('Поднесите чип ещё раз для перезаписи'); } },
   askYes(){ closeSheet(); const f = askYes; askYes = null; if (f) f(); },
@@ -683,8 +709,12 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { V.q = e.target.value; renderList(); }
   if (e.target.id === 'regApt') { V.reg.apt = e.target.value; const h = $('regHint'); if (h) h.textContent = regHint(); }
+  if (e.target.id === 'regApt2') V.reg.apt = e.target.value;
 });
-document.addEventListener('change', e => { if (e.target.id === 'regApt') render(); });
+document.addEventListener('change', e => {
+  if (e.target.id === 'regApt') render();
+  if (e.target.id === 'regApt2') { V.reg.set = nextSet(V.reg.apt); regSheet(); }
+});
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.id === 'newEmp') { const b = e.target.parentNode.querySelector('[data-a="addEmp"]'); if (b) b.click(); }
 });
