@@ -11,12 +11,12 @@
 :root{
   --bg:#f3f4f1; --card:#fff; --ink:#152226; --mute:#6a7679; --line:#e1e4de;
   --brand:#12343b; --brand-ink:#fff; --accent:#f2c14e;
-  --in:#1f8a5b; --in-bg:#e3f4ea; --out:#c8501e; --out-bg:#fbe9df;
+  --in:#1f8a5b; --in-bg:#e3f4ea; --out:#c8501e; --out-bg:#fbe9df; --guest:#2563a8; --guest-bg:#e2edf9;
   --r:14px;
 }
 @media (prefers-color-scheme:dark){
   :root{ --bg:#0e1719; --card:#17252a; --ink:#e9efee; --mute:#93a3a6; --line:#263a40;
-    --brand:#0b2227; --in:#4cc38a; --in-bg:#143326; --out:#ff8a57; --out-bg:#3a2015; }
+    --brand:#0b2227; --in:#4cc38a; --in-bg:#143326; --out:#ff8a57; --out-bg:#3a2015; --guest:#7db4ee; --guest-bg:#152a40; }
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%}
@@ -49,16 +49,25 @@ h2:first-child{margin-top:4px}
 .chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
 .row{display:flex;align-items:center;gap:10px;padding:13px 14px;border-top:1px solid var(--line);width:100%;text-align:left}
 .row:first-child{border-top:0}
-.row b{font-weight:700;min-width:64px}
+.row b{font-weight:700;min-width:58px}
 .row .grow{flex:1;min-width:0}
 .pips{display:flex;gap:6px;margin-left:auto}
 .pip{width:14px;height:14px;border-radius:50%;border:2px dashed var(--line)}
 .pip.in{background:var(--in);border:0}
 .pip.out{background:var(--out);border:0}
+.pip.guest{background:var(--guest);border:0}
+.pip.bad{background:var(--mute);border:0}
+.addr{font-size:13px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sub{background:var(--bg);border-top:1px solid var(--line);padding:6px 8px 8px}
 .sub .row{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-top:6px;padding:11px 12px}
 .tag{font-size:13px;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
 .tag.in{background:var(--in-bg);color:var(--in)} .tag.out{background:var(--out-bg);color:var(--out)}
+.tag.guest{background:var(--guest-bg);color:var(--guest)} .tag.bad{background:var(--line);color:var(--mute)}
+.opts{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;padding:0 14px 16px;font-size:13px;color:var(--mute)}
+.opts button{padding:6px 12px;border-radius:99px;border:1px solid var(--line);font-size:13px;color:var(--mute);font-weight:600}
+#pend{font-size:12px;background:var(--accent);color:#1b1b1b;border-radius:99px;padding:4px 9px;font-weight:700;display:none;white-space:nowrap}
+.lines{text-align:left;max-height:36vh;overflow:auto;margin:10px 0}
+.lines > *{display:block;width:100%;text-align:left;padding:10px 4px;border-top:1px solid var(--line);font-size:15px}
 .btn{display:block;width:100%;padding:16px;border-radius:var(--r);font-weight:700;font-size:17px;text-align:center;
   background:var(--card);border:1px solid var(--line)}
 .btn.pri{background:var(--brand);color:#fff;border-color:var(--brand)}
@@ -100,7 +109,7 @@ code.url{display:block;word-break:break-all;background:var(--bg);padding:10px;bo
 </head>
 <body>
 <div id="bar"></div>
-<header><h1>Key<i>·</i>tool</h1><button id="me" data-a="who"></button></header>
+<header><h1>Key<i>·</i>tool</h1><span id="pend"></span><button id="me" data-a="who"></button></header>
 <main id="view"></main>
 <nav id="nav"></nav>
 <div id="ov"><div class="sheet" id="sheet"></div></div>
@@ -112,9 +121,11 @@ const API = 'https://script.google.com/macros/s/AKfycbwSUL8tCadFVdYDB-nz4CxKyORO
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1HaijMRtZr7sTEw7ARPothoZTiIKM-RTKzUOBxku9pkk/edit';
 const DEFAULT_SETS = 5;
 const REFRESH_MS = 20000;
+const SEND_TIMEOUT_MS = 15000;
 /* ======================= */
 
-const apiUrl = API.indexOf('__') === 0 ? 'api' : API;
+const LOCAL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+const apiUrl = LOCAL ? 'api' : API;
 const LS = {
   get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
   set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
@@ -123,32 +134,80 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hasNfc = 'NDEFReader' in window;
 
+/* статусы связки */
+const ST = {
+  office:{ t:'В офисе', c:'in' }, hand:{ t:'На руках', c:'out' },
+  guest:{ t:'У гостя', c:'guest' }, broken:{ t:'Сломана', c:'bad' }, lost:{ t:'Утеряна', c:'bad' }
+};
+const TYPE_TO = { take:'hand', 'return':'office', guest:'guest', broken:'broken', lost:'lost' };
+const DONE_TEXT = { take:'ключ у вас', 'return':'ключ в офисе', guest:'ключ у гостя', broken:'связка отмечена как сломанная', lost:'связка отмечена как утерянная' };
+const SHORT = { take:'взял', 'return':'вернул в офис', guest:'у гостя', broken:'сломана', lost:'утеряна' };
+
 let D = null, fresh = false, busy = false;
 let me = LS.get('kt_me') || '';
+let Q = [];                       // отметки, сделанные без связи
 const V = { tab:'keys', filter:'all', q:'', open:null, key:null, manual:false, done:null, picking:false,
             reg:{ apt:'', set:1, extra:0 } };
 
 try { const c = LS.get('kt_cache'); if (c) D = JSON.parse(c); } catch(e){}
+try { Q = JSON.parse(LS.get('kt_q') || '[]') || []; } catch(e){ Q = []; }
+if (D && D.keys.length && D.keys[0].st === undefined) D = null;      // кэш старой версии
 const k0 = new URLSearchParams(location.search).get('k');
-if (k0) { V.key = k0.toUpperCase(); V.manual = false; }
+let autoKey = null;               // связка, открытая касанием чипа: записать действие автоматически
+if (k0) { V.key = k0.toUpperCase(); V.manual = false; if (me) autoKey = V.key; }
 
 /* ---------- сервер ---------- */
-async function api(body, quiet){
-  if (!quiet) setBusy(true);
+const isNet = e => e instanceof TypeError || (e && e.name === 'AbortError');
+async function api(body, o){
+  o = o || {};
+  if (!o.quiet) setBusy(true);
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), SEND_TIMEOUT_MS);
   try {
-    const r = body ? await fetch(apiUrl, { method:'POST', body: JSON.stringify(body) })
-                   : await fetch(apiUrl + (apiUrl.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now());
+    const r = body ? await fetch(apiUrl, { method:'POST', body: JSON.stringify(body), signal: ctl.signal })
+                   : await fetch(apiUrl + (apiUrl.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now(), { signal: ctl.signal });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'Ошибка сервера');
     D = j.state; fresh = true;
     LS.set('kt_cache', JSON.stringify(D));
     return j;
   } catch(e){
-    if (!quiet) toast(e.message === 'Failed to fetch' ? 'Нет связи с сервером' : e.message);
+    if (!o.quiet && !(o.noNetToast && isNet(e))) toast(isNet(e) ? 'Нет связи с сервером' : e.message);
     throw e;
-  } finally { if (!quiet) setBusy(false); }
+  } finally { clearTimeout(timer); if (!o.quiet) setBusy(false); }
 }
 function setBusy(b){ busy = b; $('bar').className = b ? 'on' : ''; document.body.classList.toggle('busy', b); }
+
+/* Отправка отметки. Нет связи — отметка сохраняется в телефоне и уйдёт позже. */
+function saveQ(){ LS.set('kt_q', JSON.stringify(Q)); const p = $('pend'); p.style.display = Q.length ? 'inline-block' : 'none'; p.textContent = 'ждут связи: ' + Q.length; }
+function applyLocal(b){
+  const k = findKey(b.key); if (!k) return;
+  if (b.action === 'move') { k.st = TYPE_TO[b.type]; k.who = k.st === 'office' ? '' : b.who; k.since = b.at; }
+  if (b.action === 'set') { k.st = b.st; k.who = b.st === 'office' ? '' : (b.holder || ''); k.since = Date.now(); }
+  LS.set('kt_cache', JSON.stringify(D));
+}
+async function send(body){
+  body.at = Date.now();
+  if (Q.length) await flushQ();
+  if (Q.length) { Q.push(body); saveQ(); applyLocal(body); return { queued:true }; }
+  try { return await api(body, { noNetToast:true }); }
+  catch(e){
+    if (!isNet(e) || !D) throw e;
+    Q.push(body); saveQ(); applyLocal(body);
+    return { queued:true };
+  }
+}
+let flushing = false;
+async function flushQ(){
+  if (flushing || !Q.length) return;
+  flushing = true;
+  try {
+    while (Q.length) {
+      try { await api(Q[0], { quiet:true }); }
+      catch(e){ if (isNet(e)) break; toast('Отметка ' + Q[0].key + ' не принята: ' + e.message); }
+      Q.shift(); saveQ();
+    }
+  } finally { flushing = false; }
+}
 
 /* ---------- утилиты ---------- */
 let toastT;
@@ -171,12 +230,14 @@ function ago(ms){
   if (m < 60*24) return Math.round(m/60) + ' ч';
   return Math.round(m/1440) + ' дн';
 }
+const since = k => k.since ? `с ${when(k.since)} · ${ago(k.since)}` : '';
 const aptNum = a => { const m = /(\d+)$/.exec(a); return m ? +m[1] : 1e9; };
 function normApt(v){
   let a = String(v || '').toUpperCase().replace(/\s+/g,'');
   if (/^\d+$/.test(a)) a = 'ID' + a;
   return /^[A-Z0-9]{1,12}$/.test(a) ? a : '';
 }
+const fold = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 function splitKey(id){ const i = id.lastIndexOf('-'); return i < 0 ? { apt:id, set:'' } : { apt:id.slice(0,i), set:id.slice(i+1) }; }
 const keyUrl = id => location.origin + location.pathname + '?k=' + encodeURIComponent(id);
 const findKey = id => D && D.keys.find(k => k.id === id);
@@ -185,6 +246,12 @@ function apartments(){
   const ids = new Set(D.apartments.map(a => a.id)); D.keys.forEach(k => ids.add(k.apt));
   return [...ids].sort((a,b) => aptNum(a) - aptNum(b) || a.localeCompare(b));
 }
+function addrOf(apt){ const a = D.apartments.find(x => x.id === apt); return a ? a.note : ''; }
+/* короткая подпись статуса: для «на руках» — имя */
+const stLabel = k => k.st === 'hand' ? k.who : ST[k.st].t;
+const stFull = k => k.st === 'hand' ? 'На руках: ' + k.who : ST[k.st].t;
+/* что записать автоматически при скане; null — нужен выбор человека */
+const autoType = k => k.st === 'office' ? 'take' : (k.st === 'hand' && k.who === me) ? 'return' : null;
 
 /* ---------- отрисовка ---------- */
 function render(){
@@ -221,16 +288,19 @@ function viewKey(){
       <div class="when">Эта связка ещё не добавлена в учёт</div></div>
       <div class="pad"><button class="btn pri" data-a="regKnown">Добавить в учёт</button></div></div>
       <p><button class="link" data-a="back">← К списку</button></p>`;
-  const mine = k.out && k.who === me;
-  const st = k.out ? `<span class="tag out st">На руках: ${esc(k.who)}</span><div class="when">с ${when(k.since)} · ${ago(k.since)}</div>`
-                   : `<span class="tag in st">В офисе</span>${k.since ? `<div class="when">с ${when(k.since)}</div>` : ''}`;
+  const addr = addrOf(k.apt);
+  const head = `<div class="apt">${esc(k.apt)}</div><div class="set">связка ${k.set}</div>${addr ? `<div class="when">${esc(addr)}</div>` : ''}
+    <span class="tag ${ST[k.st].c} st">${esc(stFull(k))}</span>${k.since ? `<div class="when">${since(k)}</div>` : ''}`;
+  if (autoKey === k.id) return `<div class="card"><div class="hero">${head}<div class="when" style="margin-top:18px">Записываю…</div></div></div>`;
   let btns;
-  if (!k.out) btns = `<button class="btn big take" data-a="move" data-t="take">Взял</button>`;
-  else if (mine) btns = `<button class="btn big ret" data-a="move" data-t="return">Вернул в офис</button>`;
+  if (k.st === 'office') btns = `<button class="btn big take" data-a="move" data-t="take">Взял</button>`;
+  else if (k.st === 'hand' && k.who === me) btns = `<button class="btn big ret" data-a="move" data-t="return">Вернул в офис</button>`;
   else btns = `<button class="btn big ret" data-a="move" data-t="return">Вернул в офис</button>
-               <button class="btn" data-a="move" data-t="take">Забрал себе у ${esc(k.who)}</button>`;
-  return `<div class="card"><div class="hero"><div class="apt">${esc(k.apt)}</div><div class="set">связка ${k.set}</div>${st}</div>
-    <div class="pad">${btns}</div></div>
+               <button class="btn" data-a="move" data-t="take">${k.st === 'hand' ? 'Забрал себе у ' + esc(k.who) : 'Взял себе'}</button>`;
+  const opts = ['guest','broken','lost'].filter(t => t !== k.st)
+    .map(t => `<button data-a="move" data-t="${t}">${ST[t].t}</button>`).join('');
+  return `<div class="card"><div class="hero">${head}</div>
+    <div class="pad">${btns}</div><div class="opts"><span>Отметить:</span>${opts}</div></div>
     <p class="line" style="justify-content:space-between"><button class="link" data-a="back">← К списку</button>
     ${V.manual ? '<button class="link" data-a="delKey">Удалить связку из учёта</button>' : ''}</p>`;
 }
@@ -239,30 +309,31 @@ function viewDone(){
   const d = V.done;
   return `<div class="card"><div class="hero"><div class="ok">✓</div>
     <div class="apt">${esc(d.apt)}</div><div class="set">связка ${esc(d.set)}</div>
-    <div class="when" style="font-size:17px;color:var(--ink)">${d.type==='take' ? 'Записано: ключ у вас' : 'Записано: ключ в офисе'}</div>
-    <div class="when">${esc(me)} · ${when(Date.now())}</div></div>
-    <div class="pad"><button class="btn pri" data-a="back">Готово</button></div></div>`;
+    <div class="when" style="font-size:17px;color:var(--ink)">Записано: ${DONE_TEXT[d.type]}</div>
+    <div class="when">${esc(me)} · ${when(Date.now())}</div>
+    ${d.queued ? '<div class="when" style="color:var(--out)">Нет связи — отметка сохранена в телефоне и отправится сама</div>' : ''}</div>
+    <div class="pad"><button class="btn pri" data-a="back">Готово</button><button class="btn" data-a="undo">Отменить</button></div></div>`;
 }
 
 function viewKeys(){
-  const out = D.keys.filter(k => k.out), mine = out.filter(k => k.who === me);
+  const away = D.keys.filter(k => k.st !== 'office'), mine = away.filter(k => k.st === 'hand' && k.who === me);
   const chip = (f, t) => `<button class="chip ${V.filter===f?'on':''}" data-a="filter" data-f="${f}">${t}</button>`;
-  return `<input class="search" id="q" inputmode="search" placeholder="Поиск по номеру квартиры" value="${esc(V.q)}" autocomplete="off">
-    <div class="chips">${chip('all','Все квартиры')}${chip('out','На руках · ' + out.length)}${chip('mine','У меня · ' + mine.length)}</div>
+  return `<input class="search" id="q" inputmode="search" placeholder="Поиск: номер квартиры или адрес" value="${esc(V.q)}" autocomplete="off">
+    <div class="chips">${chip('all','Все квартиры')}${chip('out','Не в офисе · ' + away.length)}${chip('mine','У меня · ' + mine.length)}</div>
     <div id="list"></div>
-    ${hasNfc ? '<button class="fab" data-a="scan">Сканировать чип</button>' : ''}`;
+    ${hasNfc ? '<button class="fab" data-a="scan">Сканировать чипы</button>' : ''}`;
 }
 
 function renderList(){
   const el = $('list'); if (!el) return;
-  const q = V.q.trim().toUpperCase().replace(/\s+/g,'');
-  const match = apt => !q || apt.indexOf(q) >= 0 || String(aptNum(apt)) === q.replace(/^ID/,'');
+  const raw = V.q.trim(), q = raw.toUpperCase().replace(/\s+/g,''), fq = fold(raw);
+  const match = apt => !raw || apt.indexOf(q) >= 0 || String(aptNum(apt)) === q.replace(/^ID/,'') || (fq.length > 1 && fold(addrOf(apt)).indexOf(fq) >= 0);
   if (V.filter !== 'all') {
-    const ks = D.keys.filter(k => k.out && (V.filter === 'out' || k.who === me) && match(k.apt))
+    const ks = D.keys.filter(k => k.st !== 'office' && (V.filter === 'out' || (k.st === 'hand' && k.who === me)) && match(k.apt))
       .sort((a,b) => (a.since||0) - (b.since||0));
     el.innerHTML = ks.length ? `<div class="card">${ks.map(k =>
       `<button class="row" data-a="key" data-k="${esc(k.id)}"><b>${esc(k.apt)}</b>
-        <span class="grow"><div>связка ${k.set} · ${esc(k.who)}</div><div class="mute small">с ${when(k.since)} · ${ago(k.since)}</div></span>
+        <span class="grow"><div>связка ${k.set} · ${esc(stLabel(k))}</div><div class="mute small">${since(k)}</div></span>
         <span class="mute">›</span></button>`).join('')}</div>`
       : `<div class="empty">${V.filter==='mine' ? 'У вас нет ключей на руках' : 'Все ключи в офисе'}</div>`;
     return;
@@ -274,16 +345,16 @@ function renderList(){
     const ks = (by[a] || []).sort((x,y) => x.set - y.set);
     const n = Math.max(DEFAULT_SETS, ...ks.map(k => k.set));
     let pips = '';
-    for (let i = 1; i <= n; i++) { const k = ks.find(x => x.set === i); pips += `<span class="pip ${k ? (k.out ? 'out' : 'in') : ''}"></span>`; }
+    for (let i = 1; i <= n; i++) { const k = ks.find(x => x.set === i); pips += `<span class="pip ${k ? ST[k.st].c : ''}"></span>`; }
     let sub = '';
     if (V.open === a) {
       sub = '<div class="sub">' + (ks.length ? ks.map(k =>
-        `<button class="row" data-a="key" data-k="${esc(k.id)}"><span class="grow">Связка ${k.set}${k.out ? `<div class="mute small">с ${when(k.since)} · ${ago(k.since)}</div>` : ''}</span>
-          <span class="tag ${k.out ? 'out' : 'in'}">${k.out ? esc(k.who) : 'В офисе'}</span></button>`).join('')
+        `<button class="row" data-a="key" data-k="${esc(k.id)}"><span class="grow">Связка ${k.set}${k.st !== 'office' && k.since ? `<div class="mute small">${since(k)}</div>` : ''}</span>
+          <span class="tag ${ST[k.st].c}">${esc(stLabel(k))}</span></button>`).join('')
         : '<div class="empty" style="padding:14px">Связки ещё не зарегистрированы</div>') +
         `<button class="link" data-a="goReg" data-apt="${esc(a)}">+ Зарегистрировать связку</button></div>`;
     }
-    return `<button class="row" data-a="open" data-apt="${esc(a)}"><b>${esc(a)}</b><span class="pips">${pips}</span></button>${sub}`;
+    return `<button class="row" data-a="open" data-apt="${esc(a)}"><b>${esc(a)}</b><span class="grow addr">${esc(addrOf(a))}</span><span class="pips">${pips}</span></button>${sub}`;
   }).join('') + '</div>';
 }
 
@@ -301,13 +372,12 @@ function viewMore(){
   let sets = '';
   for (let i = 1; i <= n; i++) sets += `<button class="${r.set===i?'on':''} ${have.includes(i)?'have':''}" data-a="regSet" data-s="${i}">${i}</button>`;
   sets += `<button data-a="regMore">+</button>`;
-  const isNew = apt && !apartments().includes(apt);
   return `<h2>Регистрация связки</h2>
   <div class="card pad">
     <div class="small mute" style="margin-bottom:6px">Квартира</div>
     <input class="field" style="width:100%" id="regApt" list="aptList" placeholder="например ID39" value="${esc(r.apt)}" autocomplete="off" autocapitalize="characters">
-    <datalist id="aptList">${apartments().map(a => `<option value="${esc(a)}">`).join('')}</datalist>
-    <div class="small mute" id="regHint" style="margin-top:6px">${isNew ? 'Новая квартира — будет добавлена автоматически' : 'Новая квартира? Просто введите её номер.'}</div>
+    <datalist id="aptList">${apartments().map(a => `<option value="${esc(a)}">${esc(addrOf(a))}</option>`).join('')}</datalist>
+    <div class="small mute" id="regHint" style="margin-top:6px">${esc(regHint())}</div>
     <div class="small mute" style="margin-top:12px">Номер связки <span class="mute">(подчёркнутые уже есть)</span></div>
     <div class="sets">${sets}</div>
     ${hasNfc ? '<button class="btn pri" data-a="regWrite">Записать на чип</button>'
@@ -323,6 +393,12 @@ function viewMore(){
     <button class="row" data-a="who"><span class="grow">Сменить сотрудника на этом телефоне</span><span class="mute">›</span></button>
   </div>`;
 }
+function regHint(){
+  const apt = normApt(V.reg.apt);
+  if (!apt) return 'Новая квартира? Просто введите её номер.';
+  if (!apartments().includes(apt)) return 'Новая квартира — будет добавлена автоматически';
+  return addrOf(apt) || 'Новая квартира? Просто введите её номер.';
+}
 
 /* ---------- окно снизу ---------- */
 function sheet(html){ $('sheet').innerHTML = html; $('ov').classList.add('on'); }
@@ -333,8 +409,34 @@ function ask(title, text, yes, fn){
   sheet(`<h3>${esc(title)}</h3><p class="mute">${esc(text)}</p><button class="btn pri" data-a="askYes">${esc(yes)}</button><button class="btn" data-a="askNo">Отмена</button>`);
 }
 
+/* ---------- запись действия ---------- */
+async function doMove(k, type, o){
+  const prev = { st:k.st, who:k.who };
+  const j = await send({ action:'move', key:k.id, who:me, type, manual:!!o.manual, auto:!!o.auto });
+  j.prev = prev;
+  return j;
+}
+/* автозапись для связки, открытой касанием чипа */
+async function runAuto(){
+  const id = autoKey; if (!id) return;
+  const k = findKey(id), t = k && me ? autoType(k) : null;
+  if (!t) { autoKey = null; render(); return; }
+  try {
+    const j = await doMove(k, t, { auto:true });
+    autoKey = null;
+    if (j.info) { toast(j.info); render(); return; }
+    finish(k, t, j);
+  } catch(e){ autoKey = null; render(); }
+}
+function finish(k, type, j){
+  V.done = { id:k.id, apt:k.apt, set:k.set, type, prev:j.prev, queued:!!j.queued }; V.key = null;
+  if (location.search) history.replaceState(null, '', location.pathname);
+  if (navigator.vibrate) navigator.vibrate(80);
+  render();
+}
+
 /* ---------- NFC (Android Chrome) ---------- */
-let nfc = null;  // { ctl, reader, mode, lastSerial, confirmed, working }
+let nfc = null;  // { ctl, reader, mode, lastSerial, lastAt, confirmed, working, lines, chain }
 function tagKey(ev){
   for (const rec of ev.message.records) {
     if (rec.recordType !== 'url' && rec.recordType !== 'absolute-url') continue;
@@ -351,18 +453,45 @@ async function nfcStart(mode){
   const ctl = new AbortController(), reader = new NDEFReader();
   try { await reader.scan({ signal: ctl.signal }); }
   catch(e){ return toast('NFC недоступен: включите NFC и разрешите доступ'); }
-  nfc = { ctl, reader, mode, lastSerial:null, confirmed:null, working:false };
+  nfc = { ctl, reader, mode, lastSerial:null, lastAt:0, confirmed:null, working:false, lines:[], chain:Promise.resolve() };
   reader.onreadingerror = () => { const m = $('nfcMsg'); if (m) m.textContent = 'Не удалось прочитать чип — поднесите ещё раз'; };
   reader.onreading = ev => mode === 'scan' ? onScan(ev) : onWriteTap(ev);
-  if (mode === 'scan') nfcSheet('Поднесите связку к телефону', 'Чип — к задней стороне телефона');
+  if (mode === 'scan') scanSheet();
   else regPrompt();
 }
 function nfcStop(keep){ if (nfc) { try { nfc.ctl.abort(); } catch(e){} nfc = null; } if (!keep) closeSheet(); }
-function onScan(ev){
-  const k = tagKey(ev);
-  if (!k) { const m = $('nfcMsg'); if (m) m.textContent = 'Чип пустой — зарегистрируйте его в разделе «Ещё»'; return; }
-  nfcStop(); V.key = k; V.manual = false; V.done = null; render(); refresh();
+
+/* серия сканов: подносите связки одну за другой, каждая записывается сама */
+function scanSheet(msg){
+  const lines = nfc.lines.map(l => l.key
+    ? `<button data-a="key" data-k="${esc(l.key)}">${esc(l.text)} <span class="mute">— открыть ›</span></button>`
+    : `<div>${esc(l.text)}</div>`).join('');
+  sheet(`<div class="pulse" style="width:56px;height:56px"></div><h3>Подносите связки по одной</h3>
+    <p class="mute" id="nfcMsg">${esc(msg || 'В офисе → «взял». У вас → «вернул». Чип — к задней стороне телефона.')}</p>
+    <div class="lines">${lines}</div><button class="btn pri" data-a="nfcStop">Готово</button>`);
 }
+function onScan(ev){
+  const session = nfc; if (!session) return;
+  const serial = ev.serialNumber || '', now = Date.now();
+  if (serial && serial === session.lastSerial && now - session.lastAt < 6000) return;   // тот же чип всё ещё у телефона
+  session.lastSerial = serial; session.lastAt = now;
+  const id = tagKey(ev);
+  if (!id) { scanSheet('Чип пустой — зарегистрируйте его в разделе «Ещё»'); return; }
+  if (navigator.vibrate) navigator.vibrate(60);
+  session.chain = session.chain.then(() => scanOne(session, id));
+}
+async function scanOne(session, id){
+  const add = (text, key) => { session.lines.unshift({ text, key }); if (nfc === session) scanSheet(); };
+  const k = findKey(id);
+  if (!k) return add(id + ' — не зарегистрирована', id);
+  const t = autoType(k);
+  if (!t) return add(`${id} — ${stFull(k)}`, id);
+  try {
+    const j = await doMove(k, t, { auto:true });
+    add(j.info ? `${id} — ${j.info.toLowerCase()}` : `✓ ${id} — ${SHORT[t]}${j.queued ? ' (отправится позже)' : ''}`);
+  } catch(e){ add(`${id} — ошибка: ${e.message}`, id); }
+}
+
 function regPrompt(note){
   const apt = normApt(V.reg.apt);
   nfcSheet(`${apt} · связка ${V.reg.set}`, note || 'Поднесите чип этой связки к телефону и подержите секунду');
@@ -411,7 +540,7 @@ const A = {
   tab(d){ V.tab = d.t; V.open = null; render(); window.scrollTo(0,0); },
   filter(d){ V.filter = d.f; render(); },
   open(d){ V.open = V.open === d.apt ? null : d.apt; renderList(); },
-  key(d){ V.key = d.k; V.manual = true; render(); window.scrollTo(0,0); },
+  key(d){ nfcStop(); V.key = d.k; V.manual = true; V.done = null; render(); window.scrollTo(0,0); },
   back(){ V.key = null; V.done = null; V.tab = 'keys';
     if (location.search) history.replaceState(null, '', location.pathname); render(); },
   who(){ V.picking = true; render(); },
@@ -430,13 +559,15 @@ const A = {
   async move(d){
     const k = findKey(V.key); if (!k) return;
     try {
-      const j = await api({ action:'move', key:k.id, who:me, type:d.t, manual:V.manual });
+      const j = await doMove(k, d.t, { manual:V.manual });
       if (j.info) { toast(j.info); render(); return; }
-      V.done = { apt:k.apt, set:k.set, type:d.t }; V.key = null;
-      if (location.search) history.replaceState(null, '', location.pathname);
-      if (navigator.vibrate) navigator.vibrate(80);
-      render();
+      finish(k, d.t, j);
     } catch(e){ render(); }
+  },
+  async undo(){
+    const d = V.done; if (!d) return;
+    try { await send({ action:'set', key:d.id, st:d.prev.st, holder:d.prev.who, who:me }); toast('Отменено'); } catch(e){}
+    A.back();
   },
   delKey(){
     const id = V.key;
@@ -478,16 +609,13 @@ const A = {
 
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-a]');
-  if (!b || busy) return;
+  if (!b) return;
+  if (busy && b.dataset.a !== 'nfcStop') return;
   const f = A[b.dataset.a]; if (f) f(b.dataset);
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { V.q = e.target.value; renderList(); }
-  if (e.target.id === 'regApt') {
-    V.reg.apt = e.target.value;
-    const apt = normApt(V.reg.apt), h = $('regHint');
-    if (h) h.textContent = apt && !apartments().includes(apt) ? 'Новая квартира — будет добавлена автоматически' : 'Новая квартира? Просто введите её номер.';
-  }
+  if (e.target.id === 'regApt') { V.reg.apt = e.target.value; const h = $('regHint'); if (h) h.textContent = regHint(); }
 });
 document.addEventListener('change', e => { if (e.target.id === 'regApt') render(); });
 document.addEventListener('keydown', e => {
@@ -495,22 +623,29 @@ document.addEventListener('keydown', e => {
 });
 
 /* ---------- обновление ---------- */
+const snap = () => D ? JSON.stringify([D.keys, D.employees, D.apartments, D.log.length]) : '';
 async function refresh(){
   if (busy || document.visibilityState !== 'visible') return;
-  const before = D ? JSON.stringify([D.keys, D.employees, D.apartments, D.log.length]) : '';
-  const wasFresh = fresh;
-  try { await api(null, true); } catch(e){ if (!D) $('view').innerHTML = '<div class="empty">Нет связи с сервером.<br>Проверьте интернет и обновите страницу.</div>'; return; }
-  if (wasFresh && before === JSON.stringify([D.keys, D.employees, D.apartments, D.log.length])) return;
+  const before = snap(), wasFresh = fresh;
+  await flushQ();
+  if (!Q.length) {
+    try { await api(null, { quiet:true }); }
+    catch(e){ if (!D) $('view').innerHTML = '<div class="empty">Нет связи с сервером.<br>Проверьте интернет и обновите страницу.</div>'; return; }
+  }
+  if (wasFresh && before === snap()) return;
   if ($('ov').classList.contains('on')) return;
   const a = document.activeElement;
   if (a && (a.tagName === 'INPUT') && a.id !== 'q') return;       // не сбивать ввод
   if (a && a.id === 'q') return renderList();
   render();
 }
+saveQ();
 render();
-refresh();
+refresh().then(runAuto, runAuto);
 setInterval(refresh, REFRESH_MS);
 document.addEventListener('visibilitychange', refresh);
+window.addEventListener('online', refresh);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
 </html>
