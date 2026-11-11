@@ -506,6 +506,9 @@ function finish(k, type, j){
 
 /* ---------- NFC (Android Chrome) ---------- */
 let nfc = null;  // { ctl, reader, mode, lastSerial, lastAt, confirmed, working, lines, chain }
+/* Чипы связок — NTAG / Mifare Ultralight с номером из 7 байт. Брелоки домофонов (Mifare Classic) — 4 байта.
+   Чужие чипы приложение не регистрирует и ничего на них не пишет. */
+const ourChip = serial => !serial || serial.split(':').length === 7;
 function tagKey(ev){
   for (const rec of ev.message.records) {
     if (rec.recordType !== 'url' && rec.recordType !== 'absolute-url') continue;
@@ -547,6 +550,7 @@ function onScan(ev){
   const id = tagKey(ev);
   if (navigator.vibrate) navigator.vibrate(60);
   const k = id && findKey(id);
+  if (!k && !ourChip(serial)) { session.lines.unshift({ text:'Чужой чип (брелок домофона?) — пропущен' }); scanSheet(); return; }
   if (!k) {                                   // чип пустой или связки нет в учёте — предложить регистрацию
     nfcStop(true);
     const sk = id ? splitKey(id) : { apt:'', set:'' };
@@ -581,6 +585,7 @@ async function onWriteTap(ev){
   if (!nfc || nfc.working) return;
   const serial = ev.serialNumber || '';
   if (serial && serial === nfc.lastSerial) return;            // тот же чип всё ещё у телефона
+  if (!ourChip(serial)) { regPrompt('Это не чип связки (похоже на брелок домофона) — ничего не записано. Поднесите чип связки.'); return; }
   const apt = normApt(V.reg.apt), set = V.reg.set, id = apt + '-' + set;
   const old = tagKey(ev);
   if (old && old !== id && nfc.confirmed !== serial) {
