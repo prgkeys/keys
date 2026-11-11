@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12343b">
+<meta name="robots" content="noindex">
+<title>Key tool</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2312343b'/%3E%3Ccircle cx='24' cy='32' r='10' fill='none' stroke='%23f2c14e' stroke-width='6'/%3E%3Cpath d='M34 32h20M46 32v8M53 32v6' stroke='%23f2c14e' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f3f4f1; --card:#fff; --ink:#152226; --mute:#6a7679; --line:#e1e4de;
+  --brand:#12343b; --brand-ink:#fff; --accent:#f2c14e;
+  --in:#1f8a5b; --in-bg:#e3f4ea; --out:#c8501e; --out-bg:#fbe9df;
+  --r:14px;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#0e1719; --card:#17252a; --ink:#e9efee; --mute:#93a3a6; --line:#263a40;
+    --brand:#0b2227; --in:#4cc38a; --in-bg:#143326; --out:#ff8a57; --out-bg:#3a2015; }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+header{position:sticky;top:0;z-index:5;background:var(--brand);color:var(--brand-ink);
+  padding:calc(env(safe-area-inset-top) + 12px) 16px 12px;display:flex;align-items:center;gap:12px}
+header h1{margin:0;font-size:18px;font-weight:700;letter-spacing:.2px;flex:1}
+header h1 i{font-style:normal;color:var(--accent)}
+#me{background:rgba(255,255,255,.14);color:#fff;border-radius:99px;padding:6px 12px;font-size:14px;max-width:55vw;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar{position:fixed;top:0;left:0;height:3px;width:0;background:var(--accent);z-index:20;transition:width .3s}
+#bar.on{width:85%;transition:width 4s cubic-bezier(.1,.7,.2,1)}
+main{max-width:640px;margin:0 auto;padding:14px 14px calc(env(safe-area-inset-bottom) + 96px)}
+nav{position:fixed;bottom:0;left:0;right:0;z-index:5;background:var(--card);border-top:1px solid var(--line);
+  display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;padding:12px 4px 11px;font-size:13px;color:var(--mute);font-weight:600}
+nav button.on{color:var(--ink);box-shadow:inset 0 3px 0 var(--accent)}
+.card{background:var(--card);border-radius:var(--r);border:1px solid var(--line);overflow:hidden}
+.card + .card,.card + h2{margin-top:14px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);margin:22px 4px 8px;font-weight:700}
+h2:first-child{margin-top:4px}
+.pad{padding:14px}
+.mute{color:var(--mute)} .small{font-size:14px}
+.search{width:100%;padding:12px 14px;border-radius:var(--r);border:1px solid var(--line);background:var(--card);outline:none}
+.search:focus,.field:focus{border-color:var(--brand)}
+.chips{display:flex;gap:8px;margin:10px 0 12px;flex-wrap:wrap}
+.chip{padding:7px 13px;border-radius:99px;background:var(--card);border:1px solid var(--line);font-size:14px;font-weight:600;color:var(--mute)}
+.chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.row{display:flex;align-items:center;gap:10px;padding:13px 14px;border-top:1px solid var(--line);width:100%;text-align:left}
+.row:first-child{border-top:0}
+.row b{font-weight:700;min-width:64px}
+.row .grow{flex:1;min-width:0}
+.pips{display:flex;gap:6px;margin-left:auto}
+.pip{width:14px;height:14px;border-radius:50%;border:2px dashed var(--line)}
+.pip.in{background:var(--in);border:0}
+.pip.out{background:var(--out);border:0}
+.sub{background:var(--bg);border-top:1px solid var(--line);padding:6px 8px 8px}
+.sub .row{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-top:6px;padding:11px 12px}
+.tag{font-size:13px;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.tag.in{background:var(--in-bg);color:var(--in)} .tag.out{background:var(--out-bg);color:var(--out)}
+.btn{display:block;width:100%;padding:16px;border-radius:var(--r);font-weight:700;font-size:17px;text-align:center;
+  background:var(--card);border:1px solid var(--line)}
+.btn.pri{background:var(--brand);color:#fff;border-color:var(--brand)}
+.btn.take{background:var(--out);border-color:var(--out);color:#fff}
+.btn.ret{background:var(--in);border-color:var(--in);color:#fff}
+.btn.big{padding:24px 16px;font-size:22px}
+.btn + .btn{margin-top:10px}
+.btn:disabled,.busy .btn{opacity:.55;pointer-events:none}
+.link{color:var(--mute);text-decoration:underline;font-size:14px;padding:10px 4px}
+.hero{text-align:center;padding:26px 16px 22px}
+.hero .apt{font-size:44px;font-weight:800;letter-spacing:-1px;line-height:1}
+.hero .set{font-size:18px;color:var(--mute);margin-top:6px}
+.hero .st{display:inline-block;margin-top:16px;font-size:16px;padding:7px 14px}
+.hero .when{margin-top:8px;font-size:14px;color:var(--mute)}
+.ok{width:84px;height:84px;border-radius:50%;background:var(--in-bg);color:var(--in);font-size:46px;line-height:84px;margin:0 auto 14px}
+.field{flex:1;min-width:0;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);outline:none}
+.line{display:flex;gap:8px;align-items:center}
+.sq{padding:12px 16px;border-radius:12px;background:var(--brand);color:#fff;font-weight:700}
+.x{width:36px;height:36px;border-radius:50%;color:var(--mute);font-size:20px;line-height:1}
+.sets{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px}
+.sets button{width:46px;height:46px;border-radius:12px;border:1px solid var(--line);background:var(--bg);font-weight:700}
+.sets button.on{background:var(--accent);border-color:var(--accent);color:#1b1b1b}
+.sets button.have{box-shadow:inset 0 -4px 0 var(--in)}
+.fab{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 64px);z-index:6;background:var(--accent);color:#1b1b1b;
+  font-weight:800;padding:14px 20px;border-radius:99px;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+#ov{position:fixed;inset:0;z-index:30;background:rgba(8,18,20,.72);display:none;align-items:flex-end;justify-content:center}
+#ov.on{display:flex}
+#ov .sheet{background:var(--card);width:100%;max-width:640px;border-radius:20px 20px 0 0;padding:22px 18px calc(env(safe-area-inset-bottom) + 18px);text-align:center}
+#ov h3{margin:0 0 6px;font-size:20px}
+.pulse{width:92px;height:92px;border-radius:50%;margin:8px auto 16px;background:var(--accent);animation:p 1.4s infinite}
+@keyframes p{0%{box-shadow:0 0 0 0 rgba(242,193,78,.6)}100%{box-shadow:0 0 0 26px rgba(242,193,78,0)}}
+#toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 120px);transform:translateX(-50%);z-index:40;
+  background:#111c;color:#fff;background:rgba(15,20,22,.94);padding:11px 16px;border-radius:12px;font-size:15px;max-width:88vw;display:none;text-align:center}
+.empty{padding:28px 16px;text-align:center;color:var(--mute)}
+.log .row{align-items:flex-start}
+.log time{font-size:13px;color:var(--mute);min-width:86px}
+code.url{display:block;word-break:break-all;background:var(--bg);padding:10px;border-radius:10px;font-size:13px;margin:8px 0}
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<header><h1>Key<i>·</i>tool</h1><button id="me" data-a="who"></button></header>
+<main id="view"></main>
+<nav id="nav"></nav>
+<div id="ov"><div class="sheet" id="sheet"></div></div>
+<div id="toast"></div>
+
+<script>
+/* ====== НАСТРОЙКИ ====== */
+const API = 'https://script.google.com/macros/s/AKfycbwSUL8tCadFVdYDB-nz4CxKyORO1oScaEXJSM1HjNegI0ocztMFCgMRhhpERmI_Jwx3/exec';   // адрес веб-приложения Apps Script (…/exec)
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1HaijMRtZr7sTEw7ARPothoZTiIKM-RTKzUOBxku9pkk/edit';
+const DEFAULT_SETS = 5;
+const REFRESH_MS = 20000;
+/* ======================= */
+
+const apiUrl = API.indexOf('__') === 0 ? 'api' : API;
+const LS = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hasNfc = 'NDEFReader' in window;
+
+let D = null, fresh = false, busy = false;
+let me = LS.get('kt_me') || '';
+const V = { tab:'keys', filter:'all', q:'', open:null, key:null, manual:false, done:null, picking:false,
+            reg:{ apt:'', set:1, extra:0 } };
+
+try { const c = LS.get('kt_cache'); if (c) D = JSON.parse(c); } catch(e){}
+const k0 = new URLSearchParams(location.search).get('k');
+if (k0) { V.key = k0.toUpperCase(); V.manual = false; }
+
+/* ---------- сервер ---------- */
+async function api(body, quiet){
+  if (!quiet) setBusy(true);
+  try {
+    const r = body ? await fetch(apiUrl, { method:'POST', body: JSON.stringify(body) })
+                   : await fetch(apiUrl + (apiUrl.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now());
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'Ошибка сервера');
+    D = j.state; fresh = true;
+    LS.set('kt_cache', JSON.stringify(D));
+    return j;
+  } catch(e){
+    if (!quiet) toast(e.message === 'Failed to fetch' ? 'Нет связи с сервером' : e.message);
+    throw e;
+  } finally { if (!quiet) setBusy(false); }
+}
+function setBusy(b){ busy = b; $('bar').className = b ? 'on' : ''; document.body.classList.toggle('busy', b); }
+
+/* ---------- утилиты ---------- */
+let toastT;
+function toast(msg){ const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 3200); }
+const p2 = n => String(n).padStart(2,'0');
+function when(ms){
+  if (!ms) return '';
+  const d = new Date(ms), n = new Date();
+  const hm = p2(d.getHours()) + ':' + p2(d.getMinutes());
+  if (d.toDateString() === n.toDateString()) return 'сегодня ' + hm;
+  const y = new Date(n); y.setDate(n.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return 'вчера ' + hm;
+  return p2(d.getDate()) + '.' + p2(d.getMonth()+1) + ' ' + hm;
+}
+function ago(ms){
+  if (!ms) return '';
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (m < 60) return m + ' мин';
+  if (m < 60*24) return Math.round(m/60) + ' ч';
+  return Math.round(m/1440) + ' дн';
+}
+const aptNum = a => { const m = /(\d+)$/.exec(a); return m ? +m[1] : 1e9; };
+function normApt(v){
+  let a = String(v || '').toUpperCase().replace(/\s+/g,'');
+  if (/^\d+$/.test(a)) a = 'ID' + a;
+  return /^[A-Z0-9]{1,12}$/.test(a) ? a : '';
+}
+function splitKey(id){ const i = id.lastIndexOf('-'); return i < 0 ? { apt:id, set:'' } : { apt:id.slice(0,i), set:id.slice(i+1) }; }
+const keyUrl = id => location.origin + location.pathname + '?k=' + encodeURIComponent(id);
+const findKey = id => D && D.keys.find(k => k.id === id);
+const keysOf = apt => D.keys.filter(k => k.apt === apt).sort((a,b) => a.set - b.set);
+function apartments(){
+  const ids = new Set(D.apartments.map(a => a.id)); D.keys.forEach(k => ids.add(k.apt));
+  return [...ids].sort((a,b) => aptNum(a) - aptNum(b) || a.localeCompare(b));
+}
+
+/* ---------- отрисовка ---------- */
+function render(){
+  $('me').textContent = me || 'Кто вы?';
+  $('me').style.display = D ? '' : 'none';
+  const v = $('view'), nav = $('nav');
+  nav.style.display = 'none';
+  if (!D) { v.innerHTML = '<div class="empty">Загрузка…</div>'; return; }
+  if (!me || V.picking || (fresh && !D.employees.includes(me))) { v.innerHTML = viewWho(); return; }
+  if (V.done) { v.innerHTML = viewDone(); return; }
+  if (V.key) { v.innerHTML = viewKey(); return; }
+  nav.style.display = '';
+  nav.innerHTML = [['keys','Ключи'],['log','Журнал'],['more','Ещё']]
+    .map(t => `<button data-a="tab" data-t="${t[0]}" class="${V.tab===t[0]?'on':''}">${t[1]}</button>`).join('');
+  if (V.tab === 'keys') { v.innerHTML = viewKeys(); renderList(); }
+  else if (V.tab === 'log') v.innerHTML = viewLog();
+  else v.innerHTML = viewMore();
+}
+
+function viewWho(){
+  const list = D.employees.map(n => `<button class="row" data-a="pick" data-n="${esc(n)}"><span class="grow">${esc(n)}</span><span class="mute">›</span></button>`).join('');
+  return `<h2>Кто вы?</h2>
+  <div class="card">${list || '<div class="empty">Список пуст — добавьте себя ниже</div>'}</div>
+  <h2>Нет в списке?</h2>
+  <div class="card pad"><div class="line"><input class="field" id="newEmp" placeholder="Имя" maxlength="40" autocomplete="off"><button class="sq" data-a="addEmp" data-pick="1">Добавить</button></div></div>
+  ${me && D.employees.includes(me) ? '<p><button class="link" data-a="unpick">← Отмена</button></p>' : ''}
+  <p class="mute small" style="padding:0 4px">Телефон запомнит выбор, спрашивать снова не будет.</p>`;
+}
+
+function viewKey(){
+  const k = findKey(V.key), s = splitKey(V.key);
+  if (!k && !fresh) return '<div class="empty">Загрузка…</div>';
+  if (!k) return `<div class="card"><div class="hero"><div class="apt">${esc(s.apt)}</div><div class="set">связка ${esc(s.set)}</div>
+      <div class="when">Эта связка ещё не добавлена в учёт</div></div>
+      <div class="pad"><button class="btn pri" data-a="regKnown">Добавить в учёт</button></div></div>
+      <p><button class="link" data-a="back">← К списку</button></p>`;
+  const mine = k.out && k.who === me;
+  const st = k.out ? `<span class="tag out st">На руках: ${esc(k.who)}</span><div class="when">с ${when(k.since)} · ${ago(k.since)}</div>`
+                   : `<span class="tag in st">В офисе</span>${k.since ? `<div class="when">с ${when(k.since)}</div>` : ''}`;
+  let btns;
+  if (!k.out) btns = `<button class="btn big take" data-a="move" data-t="take">Взял</button>`;
+  else if (mine) btns = `<button class="btn big ret" data-a="move" data-t="return">Вернул в офис</button>`;
+  else btns = `<button class="btn big ret" data-a="move" data-t="return">Вернул в офис</button>
+               <button class="btn" data-a="move" data-t="take">Забрал себе у ${esc(k.who)}</button>`;
+  return `<div class="card"><div class="hero"><div class="apt">${esc(k.apt)}</div><div class="set">связка ${k.set}</div>${st}</div>
+    <div class="pad">${btns}</div></div>
+    <p class="line" style="justify-content:space-between"><button class="link" data-a="back">← К списку</button>
+    ${V.manual ? '<button class="link" data-a="delKey">Удалить связку из учёта</button>' : ''}</p>`;
+}
+
+function viewDone(){
+  const d = V.done;
+  return `<div class="card"><div class="hero"><div class="ok">✓</div>
+    <div class="apt">${esc(d.apt)}</div><div class="set">связка ${esc(d.set)}</div>
+    <div class="when" style="font-size:17px;color:var(--ink)">${d.type==='take' ? 'Записано: ключ у вас' : 'Записано: ключ в офисе'}</div>
+    <div class="when">${esc(me)} · ${when(Date.now())}</div></div>
+    <div class="pad"><button class="btn pri" data-a="back">Готово</button></div></div>`;
+}
+
+function viewKeys(){
+  const out = D.keys.filter(k => k.out), mine = out.filter(k => k.who === me);
+  const chip = (f, t) => `<button class="chip ${V.filter===f?'on':''}" data-a="filter" data-f="${f}">${t}</button>`;
+  return `<input class="search" id="q" inputmode="search" placeholder="Поиск по номеру квартиры" value="${esc(V.q)}" autocomplete="off">
+    <div class="chips">${chip('all','Все квартиры')}${chip('out','На руках · ' + out.length)}${chip('mine','У меня · ' + mine.length)}</div>
+    <div id="list"></div>
+    ${hasNfc ? '<button class="fab" data-a="scan">Сканировать чип</button>' : ''}`;
+}
+
+function renderList(){
+  const el = $('list'); if (!el) return;
+  const q = V.q.trim().toUpperCase().replace(/\s+/g,'');
+  const match = apt => !q || apt.indexOf(q) >= 0 || String(aptNum(apt)) === q.replace(/^ID/,'');
+  if (V.filter !== 'all') {
+    const ks = D.keys.filter(k => k.out && (V.filter === 'out' || k.who === me) && match(k.apt))
+      .sort((a,b) => (a.since||0) - (b.since||0));
+    el.innerHTML = ks.length ? `<div class="card">${ks.map(k =>
+      `<button class="row" data-a="key" data-k="${esc(k.id)}"><b>${esc(k.apt)}</b>
+        <span class="grow"><div>связка ${k.set} · ${esc(k.who)}</div><div class="mute small">с ${when(k.since)} · ${ago(k.since)}</div></span>
+        <span class="mute">›</span></button>`).join('')}</div>`
+      : `<div class="empty">${V.filter==='mine' ? 'У вас нет ключей на руках' : 'Все ключи в офисе'}</div>`;
+    return;
+  }
+  const by = {}; D.keys.forEach(k => (by[k.apt] = by[k.apt] || []).push(k));
+  const apts = apartments().filter(match);
+  if (!apts.length) { el.innerHTML = '<div class="empty">Ничего не найдено</div>'; return; }
+  el.innerHTML = '<div class="card">' + apts.map(a => {
+    const ks = (by[a] || []).sort((x,y) => x.set - y.set);
+    const n = Math.max(DEFAULT_SETS, ...ks.map(k => k.set));
+    let pips = '';
+    for (let i = 1; i <= n; i++) { const k = ks.find(x => x.set === i); pips += `<span class="pip ${k ? (k.out ? 'out' : 'in') : ''}"></span>`; }
+    let sub = '';
+    if (V.open === a) {
+      sub = '<div class="sub">' + (ks.length ? ks.map(k =>
+        `<button class="row" data-a="key" data-k="${esc(k.id)}"><span class="grow">Связка ${k.set}${k.out ? `<div class="mute small">с ${when(k.since)} · ${ago(k.since)}</div>` : ''}</span>
+          <span class="tag ${k.out ? 'out' : 'in'}">${k.out ? esc(k.who) : 'В офисе'}</span></button>`).join('')
+        : '<div class="empty" style="padding:14px">Связки ещё не зарегистрированы</div>') +
+        `<button class="link" data-a="goReg" data-apt="${esc(a)}">+ Зарегистрировать связку</button></div>`;
+    }
+    return `<button class="row" data-a="open" data-apt="${esc(a)}"><b>${esc(a)}</b><span class="pips">${pips}</span></button>${sub}`;
+  }).join('') + '</div>';
+}
+
+function viewLog(){
+  if (!D.log.length) return '<div class="empty">Пока нет записей</div>';
+  return `<div class="card log">${D.log.map(l =>
+    `<div class="row"><time>${when(l.t)}</time><span class="grow"><div><b style="min-width:0">${esc(l.who)}</b> — ${esc(l.act.toLowerCase())}${l.apt ? ' · ' + esc(l.apt) + (l.set ? ' / ' + l.set : '') : ''}</div>
+      ${l.note ? `<div class="mute small">${esc(l.note)}</div>` : ''}</span></div>`).join('')}</div>
+    <p class="mute small" style="padding:0 4px">Последние ${D.log.length} записей. Полная история — в <a href="${SHEET_URL}" target="_blank" rel="noopener" style="color:inherit">таблице</a>.</p>`;
+}
+
+function viewMore(){
+  const r = V.reg, apt = normApt(r.apt), have = apt ? keysOf(apt).map(k => k.set) : [];
+  const n = Math.max(DEFAULT_SETS + r.extra, ...have, r.set);
+  let sets = '';
+  for (let i = 1; i <= n; i++) sets += `<button class="${r.set===i?'on':''} ${have.includes(i)?'have':''}" data-a="regSet" data-s="${i}">${i}</button>`;
+  sets += `<button data-a="regMore">+</button>`;
+  const isNew = apt && !apartments().includes(apt);
+  return `<h2>Регистрация связки</h2>
+  <div class="card pad">
+    <div class="small mute" style="margin-bottom:6px">Квартира</div>
+    <input class="field" style="width:100%" id="regApt" list="aptList" placeholder="например ID39" value="${esc(r.apt)}" autocomplete="off" autocapitalize="characters">
+    <datalist id="aptList">${apartments().map(a => `<option value="${esc(a)}">`).join('')}</datalist>
+    <div class="small mute" id="regHint" style="margin-top:6px">${isNew ? 'Новая квартира — будет добавлена автоматически' : 'Новая квартира? Просто введите её номер.'}</div>
+    <div class="small mute" style="margin-top:12px">Номер связки <span class="mute">(подчёркнутые уже есть)</span></div>
+    <div class="sets">${sets}</div>
+    ${hasNfc ? '<button class="btn pri" data-a="regWrite">Записать на чип</button>'
+             : '<div class="small mute">Запись чипов работает только на Android в браузере Chrome. С этого телефона можно сканировать уже записанные связки.</div>'}
+    <button class="link" data-a="regLink">Показать ссылку для ручной записи</button>
+  </div>
+  <h2>Сотрудники</h2>
+  <div class="card">${D.employees.map(e => `<div class="row"><span class="grow">${esc(e)}${e===me?' <span class="mute small">(вы)</span>':''}</span><button class="x" data-a="delEmp" data-n="${esc(e)}" aria-label="Удалить">×</button></div>`).join('')}
+    <div class="row"><div class="line grow"><input class="field" id="newEmp" placeholder="Новый сотрудник" maxlength="40" autocomplete="off"><button class="sq" data-a="addEmp">Добавить</button></div></div></div>
+  <h2>Прочее</h2>
+  <div class="card">
+    <a class="row" href="${SHEET_URL}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><span class="grow">Открыть таблицу Google</span><span class="mute">›</span></a>
+    <button class="row" data-a="who"><span class="grow">Сменить сотрудника на этом телефоне</span><span class="mute">›</span></button>
+  </div>`;
+}
+
+/* ---------- окно снизу ---------- */
+function sheet(html){ $('sheet').innerHTML = html; $('ov').classList.add('on'); }
+function closeSheet(){ $('ov').classList.remove('on'); }
+let askYes = null;
+function ask(title, text, yes, fn){
+  askYes = fn;
+  sheet(`<h3>${esc(title)}</h3><p class="mute">${esc(text)}</p><button class="btn pri" data-a="askYes">${esc(yes)}</button><button class="btn" data-a="askNo">Отмена</button>`);
+}
+
+/* ---------- NFC (Android Chrome) ---------- */
+let nfc = null;  // { ctl, reader, mode, lastSerial, confirmed, working }
+function tagKey(ev){
+  for (const rec of ev.message.records) {
+    if (rec.recordType !== 'url' && rec.recordType !== 'absolute-url') continue;
+    try { const k = new URL(new TextDecoder().decode(rec.data)).searchParams.get('k'); if (k) return k.toUpperCase(); } catch(e){}
+  }
+  return null;
+}
+function nfcSheet(title, text, extra){
+  sheet(`<div class="pulse"></div><h3>${esc(title)}</h3><p class="mute" id="nfcMsg">${esc(text || '')}</p>${extra || ''}<button class="btn" data-a="nfcStop">Закрыть</button>`);
+}
+async function nfcStart(mode){
+  if (!hasNfc) return toast('На этом телефоне сканирование из приложения недоступно');
+  nfcStop(true);
+  const ctl = new AbortController(), reader = new NDEFReader();
+  try { await reader.scan({ signal: ctl.signal }); }
+  catch(e){ return toast('NFC недоступен: включите NFC и разрешите доступ'); }
+  nfc = { ctl, reader, mode, lastSerial:null, confirmed:null, working:false };
+  reader.onreadingerror = () => { const m = $('nfcMsg'); if (m) m.textContent = 'Не удалось прочитать чип — поднесите ещё раз'; };
+  reader.onreading = ev => mode === 'scan' ? onScan(ev) : onWriteTap(ev);
+  if (mode === 'scan') nfcSheet('Поднесите связку к телефону', 'Чип — к задней стороне телефона');
+  else regPrompt();
+}
+function nfcStop(keep){ if (nfc) { try { nfc.ctl.abort(); } catch(e){} nfc = null; } if (!keep) closeSheet(); }
+function onScan(ev){
+  const k = tagKey(ev);
+  if (!k) { const m = $('nfcMsg'); if (m) m.textContent = 'Чип пустой — зарегистрируйте его в разделе «Ещё»'; return; }
+  nfcStop(); V.key = k; V.manual = false; V.done = null; render(); refresh();
+}
+function regPrompt(note){
+  const apt = normApt(V.reg.apt);
+  nfcSheet(`${apt} · связка ${V.reg.set}`, note || 'Поднесите чип этой связки к телефону и подержите секунду');
+}
+async function onWriteTap(ev){
+  if (!nfc || nfc.working) return;
+  const serial = ev.serialNumber || '';
+  if (serial && serial === nfc.lastSerial) return;            // тот же чип всё ещё у телефона
+  const apt = normApt(V.reg.apt), set = V.reg.set, id = apt + '-' + set;
+  const old = tagKey(ev);
+  if (old && old !== id && nfc.confirmed !== serial) {
+    nfc.pending = serial;
+    nfcSheet('На чипе уже записано: ' + old, `Перезаписать его как ${apt} · связка ${set}?`,
+      '<button class="btn pri" data-a="nfcOverwrite">Перезаписать</button>');
+    return;
+  }
+  nfc.working = true;
+  const session = nfc;
+  try {
+    await session.reader.write({ records:[{ recordType:'url', data:keyUrl(id) }] }, { overwrite:true, signal:session.ctl.signal });
+  } catch(e){
+    session.working = false;
+    if (nfc === session) regPrompt('Не получилось записать — подержите чип у телефона чуть дольше');
+    return;
+  }
+  session.lastSerial = serial;
+  if (navigator.vibrate) navigator.vibrate(120);
+  try { await api({ action:'register', apt, set, who:me, serial }); }
+  catch(e){ session.working = false; if (nfc === session) regPrompt('Чип записан, но таблица не ответила. Поднесите другой чип или повторите позже.'); session.lastSerial = null; return; }
+  session.working = false;
+  // следующая связка
+  if (set < DEFAULT_SETS) {
+    V.reg.set = set + 1;
+    if (nfc === session) regPrompt(`✓ ${id} записана. Теперь поднесите чип связки ${set + 1}`);
+  } else {
+    const all = apartments(), i = all.indexOf(apt);
+    V.reg = { apt: (i >= 0 && all[i+1]) || '', set:1, extra:0 };
+    if (nfc === session) nfcStop();
+    toast(`✓ ${id} записана. Все связки ${apt} готовы`);
+  }
+  if (!nfc) render();
+}
+
+/* ---------- действия ---------- */
+const A = {
+  tab(d){ V.tab = d.t; V.open = null; render(); window.scrollTo(0,0); },
+  filter(d){ V.filter = d.f; render(); },
+  open(d){ V.open = V.open === d.apt ? null : d.apt; renderList(); },
+  key(d){ V.key = d.k; V.manual = true; render(); window.scrollTo(0,0); },
+  back(){ V.key = null; V.done = null; V.tab = 'keys';
+    if (location.search) history.replaceState(null, '', location.pathname); render(); },
+  who(){ V.picking = true; render(); },
+  unpick(){ V.picking = false; render(); },
+  pick(d){ me = d.n; LS.set('kt_me', me); V.picking = false; render(); },
+  async addEmp(d){
+    const inp = $('newEmp'), name = inp.value.replace(/\s+/g,' ').trim();
+    if (!name) return inp.focus();
+    try { const j = await api({ action:'addEmployee', name }); if (d.pick) { me = j.name; LS.set('kt_me', me); V.picking = false; } render(); toast('Добавлен: ' + j.name); } catch(e){}
+  },
+  delEmp(d){
+    ask('Удалить сотрудника?', d.n + ' исчезнет из списка. История в журнале сохранится.', 'Удалить', async () => {
+      try { await api({ action:'removeEmployee', name:d.n }); if (d.n === me) { me = ''; LS.set('kt_me',''); } render(); } catch(e){}
+    });
+  },
+  async move(d){
+    const k = findKey(V.key); if (!k) return;
+    try {
+      const j = await api({ action:'move', key:k.id, who:me, type:d.t, manual:V.manual });
+      if (j.info) { toast(j.info); render(); return; }
+      V.done = { apt:k.apt, set:k.set, type:d.t }; V.key = null;
+      if (location.search) history.replaceState(null, '', location.pathname);
+      if (navigator.vibrate) navigator.vibrate(80);
+      render();
+    } catch(e){ render(); }
+  },
+  delKey(){
+    const id = V.key;
+    ask('Удалить связку ' + id + '?', 'Она пропадёт из учёта. Чип можно будет записать заново.', 'Удалить', async () => {
+      try { await api({ action:'unregister', key:id, who:me }); A.back(); } catch(e){}
+    });
+  },
+  async regKnown(){
+    const s = splitKey(V.key);
+    try { await api({ action:'register', apt:s.apt, set:+s.set, who:me }); render(); toast('Связка добавлена в учёт'); } catch(e){}
+  },
+  goReg(d){ V.reg = { apt:d.apt, set:(keysOf(d.apt).map(k => k.set).reduce((m,x) => Math.max(m,x), 0) + 1), extra:0 }; V.tab = 'more'; V.open = null; render(); window.scrollTo(0,0); },
+  regSet(d){ V.reg.set = +d.s; render(); },
+  regMore(){ V.reg.extra++; V.reg.set = Math.max(DEFAULT_SETS + V.reg.extra, V.reg.set); render(); },
+  regWrite(){
+    if (!normApt(V.reg.apt)) { toast('Введите номер квартиры, например ID39'); return $('regApt').focus(); }
+    nfcStart('write');
+  },
+  regLink(){
+    const apt = normApt(V.reg.apt);
+    if (!apt) { toast('Введите номер квартиры'); return $('regApt').focus(); }
+    const id = apt + '-' + V.reg.set;
+    sheet(`<h3>${esc(id)}</h3><p class="mute small">Запишите эту ссылку на чип (например, в NFC Tools: Запись → URL), затем нажмите «Добавить в учёт».</p>
+      <code class="url" id="theUrl">${esc(keyUrl(id))}</code>
+      <button class="btn" data-a="copyUrl">Скопировать ссылку</button>
+      <button class="btn pri" data-a="regNoNfc">Добавить в учёт</button><button class="btn" data-a="askNo">Закрыть</button>`);
+  },
+  async copyUrl(){ try { await navigator.clipboard.writeText($('theUrl').textContent); toast('Скопировано'); } catch(e){ toast('Не удалось скопировать'); } },
+  async regNoNfc(){
+    closeSheet();
+    try { const j = await api({ action:'register', apt:normApt(V.reg.apt), set:V.reg.set, who:me }); toast('✓ ' + j.key + ' в учёте'); render(); } catch(e){}
+  },
+  scan(){ nfcStart('scan'); },
+  nfcStop(){ nfcStop(); render(); },
+  nfcOverwrite(){ if (nfc) { nfc.confirmed = nfc.pending; regPrompt('Поднесите чип ещё раз для перезаписи'); } },
+  askYes(){ closeSheet(); const f = askYes; askYes = null; if (f) f(); },
+  askNo(){ closeSheet(); askYes = null; }
+};
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-a]');
+  if (!b || busy) return;
+  const f = A[b.dataset.a]; if (f) f(b.dataset);
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'q') { V.q = e.target.value; renderList(); }
+  if (e.target.id === 'regApt') {
+    V.reg.apt = e.target.value;
+    const apt = normApt(V.reg.apt), h = $('regHint');
+    if (h) h.textContent = apt && !apartments().includes(apt) ? 'Новая квартира — будет добавлена автоматически' : 'Новая квартира? Просто введите её номер.';
+  }
+});
+document.addEventListener('change', e => { if (e.target.id === 'regApt') render(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.id === 'newEmp') { const b = e.target.parentNode.querySelector('[data-a="addEmp"]'); if (b) b.click(); }
+});
+
+/* ---------- обновление ---------- */
+async function refresh(){
+  if (busy || document.visibilityState !== 'visible') return;
+  const before = D ? JSON.stringify([D.keys, D.employees, D.apartments, D.log.length]) : '';
+  const wasFresh = fresh;
+  try { await api(null, true); } catch(e){ if (!D) $('view').innerHTML = '<div class="empty">Нет связи с сервером.<br>Проверьте интернет и обновите страницу.</div>'; return; }
+  if (wasFresh && before === JSON.stringify([D.keys, D.employees, D.apartments, D.log.length])) return;
+  if ($('ov').classList.contains('on')) return;
+  const a = document.activeElement;
+  if (a && (a.tagName === 'INPUT') && a.id !== 'q') return;       // не сбивать ввод
+  if (a && a.id === 'q') return renderList();
+  render();
+}
+render();
+refresh();
+setInterval(refresh, REFRESH_MS);
+document.addEventListener('visibilitychange', refresh);
+</script>
+</body>
+</html>
