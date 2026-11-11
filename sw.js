@@ -1,5 +1,5 @@
 /* Key tool — запасная копия страницы, чтобы приложение открывалось без связи. */
-const CACHE = 'keytool-v1';
+const CACHE = 'keytool-v2';
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.add('./'))); });
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {

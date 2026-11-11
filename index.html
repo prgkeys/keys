@@ -105,6 +105,10 @@ h2:first-child{margin-top:4px}
 .log .row{align-items:flex-start}
 .log time{font-size:13px;color:var(--mute);min-width:86px}
 code.url{display:block;word-break:break-all;background:var(--bg);padding:10px;border-radius:10px;font-size:13px;margin:8px 0}
+.notes{margin-bottom:12px}
+.note{display:flex;align-items:center;gap:8px;background:var(--out-bg);color:var(--ink);border-radius:12px;padding:8px 6px 8px 12px;font-size:14px;margin-bottom:6px}
+.note .link{padding:0 4px;font-size:14px}
+.sync{font-size:13px}
 </style>
 </head>
 <body>
@@ -121,7 +125,8 @@ const API = 'https://script.google.com/macros/s/AKfycbwSUL8tCadFVdYDB-nz4CxKyORO
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1HaijMRtZr7sTEw7ARPothoZTiIKM-RTKzUOBxku9pkk/edit';
 const DEFAULT_SETS = 5;
 const REFRESH_MS = 20000;
-const SEND_TIMEOUT_MS = 15000;
+const SEND_TIMEOUT_MS = 20000;
+const REPEAT_MS = 45000;          // повторный скан той же связки в этот срок не записывается
 /* ======================= */
 
 const LOCAL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
@@ -145,12 +150,13 @@ const SHORT = { take:'взял', 'return':'вернул в офис', guest:'у 
 
 let D = null, fresh = false, busy = false;
 let me = LS.get('kt_me') || '';
-let Q = [];                       // отметки, сделанные без связи
+let Q = [];                       // отметки, ещё не отправленные на сервер
+let offline = false;              // последняя отправка не удалась из-за связи
 const V = { tab:'keys', filter:'all', q:'', open:null, key:null, manual:false, done:null, picking:false,
             reg:{ apt:'', set:1, extra:0 } };
 
 try { const c = LS.get('kt_cache'); if (c) D = JSON.parse(c); } catch(e){}
-try { Q = JSON.parse(LS.get('kt_q') || '[]') || []; } catch(e){ Q = []; }
+loadQ();
 if (D && D.keys.length && D.keys[0].st === undefined) D = null;      // кэш старой версии
 const k0 = new URLSearchParams(location.search).get('k');
 let autoKey = null;               // связка, открытая касанием чипа: записать действие автоматически
@@ -158,6 +164,11 @@ if (k0) { V.key = k0.toUpperCase(); V.manual = false; if (me) autoKey = V.key; }
 
 /* ---------- сервер ---------- */
 const isNet = e => e instanceof TypeError || (e && e.name === 'AbortError');
+function setState(st){
+  D = st; fresh = true;
+  Q.forEach(b => applyLocal(b, true));          // неотправленные отметки поверх данных сервера
+  LS.set('kt_cache', JSON.stringify(D));
+}
 async function api(body, o){
   o = o || {};
   if (!o.quiet) setBusy(true);
@@ -167,47 +178,99 @@ async function api(body, o){
                    : await fetch(apiUrl + (apiUrl.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now(), { signal: ctl.signal });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'Ошибка сервера');
-    D = j.state; fresh = true;
-    LS.set('kt_cache', JSON.stringify(D));
+    if (!o.raw) setState(j.state);
     return j;
   } catch(e){
-    if (!o.quiet && !(o.noNetToast && isNet(e))) toast(isNet(e) ? 'Нет связи с сервером' : e.message);
+    if (!o.quiet) toast(isNet(e) ? 'Нет связи с сервером' : e.message);
     throw e;
   } finally { clearTimeout(timer); if (!o.quiet) setBusy(false); }
 }
 function setBusy(b){ busy = b; $('bar').className = b ? 'on' : ''; document.body.classList.toggle('busy', b); }
 
-/* Отправка отметки. Нет связи — отметка сохраняется в телефоне и уйдёт позже. */
-function saveQ(){ LS.set('kt_q', JSON.stringify(Q)); const p = $('pend'); p.style.display = Q.length ? 'inline-block' : 'none'; p.textContent = 'ждут связи: ' + Q.length; }
-function applyLocal(b){
+/* ---------- очередь отметок ----------
+   Отметка (взял / вернул / статус / отмена) сразу сохраняется в телефоне и показывается как записанная.
+   Накопленные отметки уходят на сервер одной пачкой в фоне. Сервер проверяет каждую:
+   если статус связки за это время изменился, отметка не записывается и появляется предупреждение. */
+const newUid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+function loadQ(){ try { Q = JSON.parse(LS.get('kt_q') || '[]') || []; } catch(e){ Q = []; } }
+function saveQ(){
+  LS.set('kt_q', JSON.stringify(Q));
+  const p = $('pend'); if (!p) return;
+  p.style.display = Q.length && offline ? 'inline-block' : 'none';
+  p.textContent = 'ждут связи: ' + Q.length;
+}
+function applyLocal(b, nosave){
   const k = findKey(b.key); if (!k) return;
   if (b.action === 'move') { k.st = TYPE_TO[b.type]; k.who = k.st === 'office' ? '' : b.who; k.since = b.at; }
-  if (b.action === 'set') { k.st = b.st; k.who = b.st === 'office' ? '' : (b.holder || ''); k.since = Date.now(); }
-  LS.set('kt_cache', JSON.stringify(D));
+  if (b.action === 'set') { k.st = b.st; k.who = b.st === 'office' ? '' : (b.holder || ''); k.since = b.at; }
+  if (!nosave) LS.set('kt_cache', JSON.stringify(D));
 }
-async function send(body){
-  body.at = Date.now();
-  if (Q.length) await flushQ();
-  if (Q.length) { Q.push(body); saveQ(); applyLocal(body); return { queued:true }; }
-  try { return await api(body, { noNetToast:true }); }
-  catch(e){
-    if (!isNet(e) || !D) throw e;
-    Q.push(body); saveQ(); applyLocal(body);
-    return { queued:true };
-  }
+function send(body){
+  body.at = Date.now(); body.uid = newUid();
+  loadQ(); Q.push(body); saveQ(); applyLocal(body);
+  scheduleFlush(700);                       // короткая пауза: отметки серии уйдут одной пачкой
+  return { queued:true, uid:body.uid };
 }
-let flushing = false;
+let flushT = null, flushing = false;
+const rejected = {};               // uid → причина, по которой сервер не принял отметку
+function scheduleFlush(ms){ clearTimeout(flushT); flushT = setTimeout(() => flushQ().then(synced), ms); }
 async function flushQ(){
-  if (flushing || !Q.length) return;
+  if (flushing) return false;
+  loadQ(); if (!Q.length) return false;
   flushing = true;
+  const go = async () => {
+    loadQ(); if (!Q.length) return false;
+    const list = Q.slice(0, 40), ids = new Set(list.map(b => b.uid));
+    let j;
+    try { j = await api({ action:'batch', list }, { quiet:true, raw:true }); }
+    catch(e){ offline = isNet(e); saveQ(); return false; }
+    offline = false;
+    loadQ(); Q = Q.filter(b => !ids.has(b.uid)); saveQ();
+    setState(j.state);
+    (j.results || []).forEach(r => {
+      const b = list.find(x => x.uid === r.uid);
+      if (r.conflict) addNote(r.conflict, b && b.key, r.uid);
+      else if (!r.ok) addNote((b ? b.key + ': ' : '') + 'не записано — ' + r.error, b && b.key, r.uid);
+    });
+    if (Q.length) scheduleFlush(200);
+    return true;
+  };
   try {
-    while (Q.length) {
-      try { await api(Q[0], { quiet:true }); }
-      catch(e){ if (isNet(e)) break; toast('Отметка ' + Q[0].key + ' не принята: ' + e.message); }
-      Q.shift(); saveQ();
-    }
+    return navigator.locks ? await navigator.locks.request('kt-flush', { ifAvailable:true }, l => l ? go() : false) : await go();
   } finally { flushing = false; }
 }
+/* когда вкладку закрывают или сворачивают — отправить то, что не успело уйти (повтор сервер не применит) */
+function beacon(){
+  loadQ();
+  if (!Q.length || !navigator.sendBeacon) return;
+  try { navigator.sendBeacon(apiUrl, JSON.stringify({ action:'batch', list:Q.slice(0, 40) })); } catch(e){}
+}
+function synced(){
+  if ($('ov').classList.contains('on')) return;
+  const a = document.activeElement;
+  if (a && a.tagName === 'INPUT') return;
+  render();
+}
+/* предупреждения о непринятых отметках */
+function getNotes(){ try { return JSON.parse(LS.get('kt_notes') || '[]') || []; } catch(e){ return []; } }
+function addNote(text, key, uid){
+  const n = getNotes(); n.unshift({ text, key: key || '', uid: uid || '', t: Date.now() });
+  rejected[uid] = text;
+  LS.set('kt_notes', JSON.stringify(n.slice(0, 8))); toast('⚠ ' + text);
+}
+function notesHtml(){
+  const n = getNotes(); if (!n.length) return '';
+  return '<div class="notes">' + n.map((x, i) => `<div class="note"><span class="grow">⚠ ${esc(x.text)}${x.key ? ` <button class="link" data-a="key" data-k="${esc(x.key)}">открыть</button>` : ''}</span><button class="x" data-a="noteX" data-i="${i}" aria-label="Скрыть">×</button></div>`).join('') + '</div>';
+}
+/* недавние собственные отметки: повторный скан той же связки сразу после записи не переключает её обратно */
+function lastMine(id){ try { return (JSON.parse(LS.get('kt_last') || '{}') || {})[id] || 0; } catch(e){ return 0; } }
+function markMine(id, clear){
+  let m = {}; try { m = JSON.parse(LS.get('kt_last') || '{}') || {}; } catch(e){}
+  const now = Date.now(); for (const k in m) if (now - m[k] > REPEAT_MS) delete m[k];
+  if (clear) delete m[id]; else m[id] = now;
+  LS.set('kt_last', JSON.stringify(m));
+}
+const justDone = id => Date.now() - lastMine(id) < REPEAT_MS;
 
 /* ---------- утилиты ---------- */
 let toastT;
@@ -261,12 +324,12 @@ function render(){
   nav.style.display = 'none';
   if (!D) { v.innerHTML = '<div class="empty">Загрузка…</div>'; return; }
   if (!me || V.picking || (fresh && !D.employees.includes(me))) { v.innerHTML = viewWho(); return; }
-  if (V.done) { v.innerHTML = viewDone(); return; }
-  if (V.key) { v.innerHTML = viewKey(); return; }
+  if (V.done) { v.innerHTML = notesHtml() + viewDone(); return; }
+  if (V.key) { v.innerHTML = notesHtml() + viewKey(); return; }
   nav.style.display = '';
   nav.innerHTML = [['keys','Ключи'],['log','Журнал'],['more','Ещё']]
     .map(t => `<button data-a="tab" data-t="${t[0]}" class="${V.tab===t[0]?'on':''}">${t[1]}</button>`).join('');
-  if (V.tab === 'keys') { v.innerHTML = viewKeys(); renderList(); }
+  if (V.tab === 'keys') { v.innerHTML = notesHtml() + viewKeys(); renderList(); }
   else if (V.tab === 'log') v.innerHTML = viewLog();
   else v.innerHTML = viewMore();
 }
@@ -307,11 +370,16 @@ function viewKey(){
 
 function viewDone(){
   const d = V.done;
+  const bad = rejected[d.uid] || (getNotes().find(x => x.uid === d.uid) || {}).text;
+  if (bad) return `<div class="card"><div class="hero"><div class="ok" style="background:var(--out-bg);color:var(--out)">!</div>
+    <div class="apt">${esc(d.apt)}</div><div class="set">связка ${esc(d.set)}</div>
+    <div class="when" style="font-size:17px;color:var(--out)">Не записано</div><div class="when">${esc(bad.replace(/^[^:]*: не записано — /, ''))}</div></div>
+    <div class="pad"><button class="btn pri" data-a="key" data-k="${esc(d.id)}">Открыть связку</button><button class="btn" data-a="back">К списку</button></div></div>`;
   return `<div class="card"><div class="hero"><div class="ok">✓</div>
     <div class="apt">${esc(d.apt)}</div><div class="set">связка ${esc(d.set)}</div>
     <div class="when" style="font-size:17px;color:var(--ink)">Записано: ${DONE_TEXT[d.type]}</div>
     <div class="when">${esc(me)} · ${when(Date.now())}</div>
-    ${d.queued ? '<div class="when" style="color:var(--out)">Нет связи — отметка сохранена в телефоне и отправится сама</div>' : ''}</div>
+    <div class="when sync">${Q.some(b => b.uid === d.uid) ? (offline ? '<span style="color:var(--out)">Нет связи — отметка сохранена в телефоне и отправится сама</span>' : 'Отправляется…') : 'Сохранено в таблице ✓'}</div></div>
     <div class="pad"><button class="btn pri" data-a="back">Готово</button><button class="btn" data-a="undo">Отменить</button></div></div>`;
 }
 
@@ -410,26 +478,27 @@ function ask(title, text, yes, fn){
 }
 
 /* ---------- запись действия ---------- */
-async function doMove(k, type, o){
+function doMove(k, type, o){
   const prev = { st:k.st, who:k.who };
-  const j = await send({ action:'move', key:k.id, who:me, type, manual:!!o.manual, auto:!!o.auto });
+  const j = send({ action:'move', key:k.id, who:me, type, manual:!!o.manual, auto:!!o.auto, expect:prev });
+  markMine(k.id);
   j.prev = prev;
   return j;
 }
-/* автозапись для связки, открытой касанием чипа */
-async function runAuto(){
-  const id = autoKey; if (!id) return;
-  const k = findKey(id), t = k && me ? autoType(k) : null;
-  if (!t) { autoKey = null; render(); return; }
-  try {
-    const j = await doMove(k, t, { auto:true });
-    autoKey = null;
-    if (j.info) { toast(j.info); render(); return; }
-    finish(k, t, j);
-  } catch(e){ autoKey = null; render(); }
+/* автозапись для связки, открытой касанием чипа — по данным телефона, без ожидания сервера */
+function runAuto(){
+  const id = autoKey; if (!id || !D) return;
+  const k = findKey(id);
+  if (!k && !fresh) return;                         // связки нет в данных телефона — ждём сервер
+  autoKey = null;
+  if (!k || !me) { render(); return; }
+  if (justDone(id)) { toast('Уже записано несколько секунд назад'); render(); return; }
+  const t = autoType(k);
+  if (!t) { render(); return; }
+  finish(k, t, doMove(k, t, { auto:true }));
 }
 function finish(k, type, j){
-  V.done = { id:k.id, apt:k.apt, set:k.set, type, prev:j.prev, queued:!!j.queued }; V.key = null;
+  V.done = { id:k.id, apt:k.apt, set:k.set, type, prev:j.prev, uid:j.uid }; V.key = null;
   if (location.search) history.replaceState(null, '', location.pathname);
   if (navigator.vibrate) navigator.vibrate(80);
   render();
@@ -478,18 +547,14 @@ function onScan(ev){
   const id = tagKey(ev);
   if (!id) { scanSheet('Чип пустой — зарегистрируйте его в разделе «Ещё»'); return; }
   if (navigator.vibrate) navigator.vibrate(60);
-  session.chain = session.chain.then(() => scanOne(session, id));
-}
-async function scanOne(session, id){
   const add = (text, key) => { session.lines.unshift({ text, key }); if (nfc === session) scanSheet(); };
   const k = findKey(id);
   if (!k) return add(id + ' — не зарегистрирована', id);
+  if (justDone(id)) return add(id + ' — уже записано');
   const t = autoType(k);
   if (!t) return add(`${id} — ${stFull(k)}`, id);
-  try {
-    const j = await doMove(k, t, { auto:true });
-    add(j.info ? `${id} — ${j.info.toLowerCase()}` : `✓ ${id} — ${SHORT[t]}${j.queued ? ' (отправится позже)' : ''}`);
-  } catch(e){ add(`${id} — ошибка: ${e.message}`, id); }
+  doMove(k, t, { auto:true });
+  add(`✓ ${id} — ${SHORT[t]}`);
 }
 
 function regPrompt(note){
@@ -556,18 +621,20 @@ const A = {
       try { await api({ action:'removeEmployee', name:d.n }); if (d.n === me) { me = ''; LS.set('kt_me',''); } render(); } catch(e){}
     });
   },
-  async move(d){
+  move(d){
     const k = findKey(V.key); if (!k) return;
-    try {
-      const j = await doMove(k, d.t, { manual:V.manual });
-      if (j.info) { toast(j.info); render(); return; }
-      finish(k, d.t, j);
-    } catch(e){ render(); }
+    const to = TYPE_TO[d.t];
+    if (k.st === to && (to !== 'hand' || k.who === me)) { toast('Уже отмечено'); return; }
+    finish(k, d.t, doMove(k, d.t, { manual:V.manual }));
   },
-  async undo(){
+  undo(){
     const d = V.done; if (!d) return;
-    try { await send({ action:'set', key:d.id, st:d.prev.st, holder:d.prev.who, who:me }); toast('Отменено'); } catch(e){}
-    A.back();
+    send({ action:'set', key:d.id, st:d.prev.st, holder:d.prev.who, who:me });
+    markMine(d.id, true);
+    toast('Отменено'); A.back();
+  },
+  noteX(d){
+    const n = getNotes(); n.splice(+d.i, 1); LS.set('kt_notes', JSON.stringify(n)); render();
   },
   delKey(){
     const id = V.key;
@@ -627,11 +694,14 @@ const snap = () => D ? JSON.stringify([D.keys, D.employees, D.apartments, D.log.
 async function refresh(){
   if (busy || document.visibilityState !== 'visible') return;
   const before = snap(), wasFresh = fresh;
-  await flushQ();
-  if (!Q.length) {
-    try { await api(null, { quiet:true }); }
+  loadQ();
+  let got = false;
+  if (Q.length) got = await flushQ();
+  if (!got && !Q.length) {
+    try { await api(null, { quiet:true }); offline = false; }
     catch(e){ if (!D) $('view').innerHTML = '<div class="empty">Нет связи с сервером.<br>Проверьте интернет и обновите страницу.</div>'; return; }
   }
+  if (autoKey) runAuto();
   if (wasFresh && before === snap()) return;
   if ($('ov').classList.contains('on')) return;
   const a = document.activeElement;
@@ -641,10 +711,13 @@ async function refresh(){
 }
 saveQ();
 render();
-refresh().then(runAuto, runAuto);
+runAuto();                                          // по данным телефона — мгновенно
+refresh();
 setInterval(refresh, REFRESH_MS);
-document.addEventListener('visibilitychange', refresh);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' ? beacon() : refresh());
+window.addEventListener('pagehide', beacon);
 window.addEventListener('online', refresh);
+window.addEventListener('storage', e => { if (e.key === 'kt_notes' && !V.key) synced(); });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
